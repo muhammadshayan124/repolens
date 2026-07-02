@@ -1,6 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import type { RepoSnapshot } from "./github";
+import { providerGenerators, type GenerateText, type ProviderId } from "./providers";
 
 const CategorySchema = z.object({
   name: z.string(),
@@ -58,18 +58,12 @@ function extractJson(text: string): unknown {
 
 export async function analyzeRepo(
   snapshot: RepoSnapshot,
-  client: Anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  provider: ProviderId,
+  apiKey: string,
+  generators: Record<ProviderId, GenerateText> = providerGenerators
 ): Promise<AuditReport> {
-  const response = await client.messages.create({
-    model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
-    max_tokens: 1500,
-    messages: [{ role: "user", content: buildPrompt(snapshot) }],
-  });
-
-  const textBlock = response.content.find((block) => block.type === "text");
-  if (!textBlock || textBlock.type !== "text") {
-    throw new Error("Model did not return a text response");
-  }
-
-  return AuditReportSchema.parse(extractJson(textBlock.text));
+  const generate = generators[provider];
+  const prompt = buildPrompt(snapshot);
+  const text = await generate(prompt, apiKey);
+  return AuditReportSchema.parse(extractJson(text));
 }

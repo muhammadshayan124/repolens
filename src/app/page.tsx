@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { AuditReport } from "@/lib/analyze";
+import { PROVIDER_IDS, PROVIDER_LABELS, type ProviderId } from "@/lib/providers/types";
 
 interface RepoInfo {
   owner: string;
@@ -23,6 +24,10 @@ function scoreColor(score: number): string {
 
 export default function Home() {
   const [repoUrl, setRepoUrl] = useState("");
+  const [provider, setProvider] = useState<ProviderId>("anthropic");
+  // Kept only in React state (memory) for this page load -- never written to
+  // localStorage/sessionStorage/cookies, so it disappears on refresh or navigation.
+  const [apiKey, setApiKey] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AuditResponse | null>(null);
@@ -37,7 +42,7 @@ export default function Home() {
       const res = await fetch("/api/audit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repoUrl }),
+        body: JSON.stringify({ repoUrl, provider, apiKey }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -62,19 +67,50 @@ export default function Home() {
           tests, licensing, and a check for accidentally committed secrets.
         </p>
 
-        <form onSubmit={handleSubmit} className="mt-8 flex w-full gap-2">
+        <form onSubmit={handleSubmit} className="mt-8 flex w-full flex-col gap-3">
           <input
             type="text"
             required
             value={repoUrl}
             onChange={(e) => setRepoUrl(e.target.value)}
             placeholder="owner/repo or https://github.com/owner/repo"
-            className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-black outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
+            className="w-full rounded-lg border border-zinc-300 bg-white px-4 py-2 text-black outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
           />
+
+          <div className="flex gap-2">
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value as ProviderId)}
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-black outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
+            >
+              {PROVIDER_IDS.map((id) => (
+                <option key={id} value={id}>
+                  {PROVIDER_LABELS[id]}
+                </option>
+              ))}
+            </select>
+            <input
+              type="password"
+              required
+              autoComplete="off"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder={`Your ${PROVIDER_LABELS[provider]} API key`}
+              className="flex-1 rounded-lg border border-zinc-300 bg-white px-4 py-2 text-black outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-white"
+            />
+          </div>
+
+          <p className="text-xs text-zinc-500 dark:text-zinc-500">
+            Your API key is sent directly to our server only to make this one request. It
+            is never logged, stored, or persisted anywhere — not in a database, not in
+            browser storage, not in server logs — and it&apos;s discarded the moment this
+            request finishes. You pay for your own usage on your own account.
+          </p>
+
           <button
             type="submit"
             disabled={loading}
-            className="rounded-lg bg-black px-5 py-2 font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
+            className="w-full rounded-lg bg-black px-5 py-2 font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-zinc-200"
           >
             {loading ? "Auditing…" : "Audit"}
           </button>

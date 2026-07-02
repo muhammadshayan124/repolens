@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type Anthropic from "@anthropic-ai/sdk";
 import { analyzeRepo, buildPrompt } from "@/lib/analyze";
 import type { RepoSnapshot } from "@/lib/github";
+import type { GenerateText, ProviderId } from "@/lib/providers/types";
 
 const baseSnapshot: RepoSnapshot = {
   owner: "owner",
@@ -21,14 +21,9 @@ const baseSnapshot: RepoSnapshot = {
   suspiciousFiles: [],
 };
 
-function fakeClient(responseText: string): Anthropic {
-  return {
-    messages: {
-      create: async () => ({
-        content: [{ type: "text", text: responseText }],
-      }),
-    },
-  } as unknown as Anthropic;
+function fakeGenerators(responseText: string): Record<ProviderId, GenerateText> {
+  const generate: GenerateText = async () => responseText;
+  return { anthropic: generate, openai: generate, gemini: generate };
 }
 
 describe("buildPrompt", () => {
@@ -51,24 +46,50 @@ describe("analyzeRepo", () => {
   };
 
   it("parses a valid JSON response from the model", async () => {
-    const client = fakeClient(JSON.stringify(validReport));
-    const report = await analyzeRepo(baseSnapshot, client);
+    const generators = fakeGenerators(JSON.stringify(validReport));
+    const report = await analyzeRepo(baseSnapshot, "anthropic", "test-key", generators);
     expect(report).toEqual(validReport);
   });
 
   it("extracts JSON even when the model wraps it in prose", async () => {
-    const client = fakeClient(`Here is the audit:\n${JSON.stringify(validReport)}\nHope that helps!`);
-    const report = await analyzeRepo(baseSnapshot, client);
+    const generators = fakeGenerators(
+      `Here is the audit:\n${JSON.stringify(validReport)}\nHope that helps!`
+    );
+    const report = await analyzeRepo(baseSnapshot, "openai", "test-key", generators);
     expect(report.overallScore).toBe(8.5);
   });
 
+  it("dispatches to the requested provider only", async () => {
+    let anthropicCalled = false;
+    let geminiCalled = false;
+    const generators: Record<ProviderId, GenerateText> = {
+      anthropic: async () => {
+        anthropicCalled = true;
+        return JSON.stringify(validReport);
+      },
+      openai: async () => JSON.stringify(validReport),
+      gemini: async () => {
+        geminiCalled = true;
+        return JSON.stringify(validReport);
+      },
+    };
+
+    await analyzeRepo(baseSnapshot, "gemini", "test-key", generators);
+    expect(geminiCalled).toBe(true);
+    expect(anthropicCalled).toBe(false);
+  });
+
   it("throws if the model response has no JSON", async () => {
-    const client = fakeClient("Sorry, I can't help with that.");
-    await expect(analyzeRepo(baseSnapshot, client)).rejects.toThrow();
+    const generators = fakeGenerators("Sorry, I can't help with that.");
+    await expect(
+      analyzeRepo(baseSnapshot, "anthropic", "test-key", generators)
+    ).rejects.toThrow();
   });
 
   it("throws if the JSON does not match the expected schema", async () => {
-    const client = fakeClient(JSON.stringify({ foo: "bar" }));
-    await expect(analyzeRepo(baseSnapshot, client)).rejects.toThrow();
+    const generators = fakeGenerators(JSON.stringify({ foo: "bar" }));
+    await expect(
+      analyzeRepo(baseSnapshot, "anthropic", "test-key", generators)
+    ).rejects.toThrow();
   });
 });

@@ -32,5 +32,3 @@ jobs:
 
       - name: Build
         run: npm run build
-        env:
-          ANTHROPIC_API_KEY: dummy-key-for-build-only
